@@ -1,0 +1,7 @@
+bin/
+obj/
+*.img
+*.dd
+*.raw
+*.user
+.vs/
