@@ -153,6 +153,6 @@ public class NtfsTreeBuilderTests
 
         Assert.Equal(1, result.NonameCount);
         RecoveryNode nonameNode = result.Root.Children.Single(c => c.Name == "$NonameFiles");
-        Assert.Contains(nonameNode.Children, c => c.Name == "#2000");
+        Assert.Contains(nonameNode.Children, c => c.Name == "#2000#1");
     }
 }

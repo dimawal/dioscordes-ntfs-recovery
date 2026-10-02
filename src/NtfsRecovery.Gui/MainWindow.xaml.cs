@@ -19,4 +19,16 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel vm && e.NewValue is TreeItemViewModel selected)
             vm.SelectedTreeItem = selected;
     }
+
+    private void ContentsDataGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm || sender is not DataGrid { SelectedItem: FileListItemViewModel item })
+            return;
+
+        if (item.Node.IsDirectory)
+            return; // folder navigation was removed; double-click only opens the content preview
+
+        var (metadata, image, text, unsupportedReason) = vm.BuildPreviewContent(item);
+        new PreviewWindow(item.Name, metadata, image, text, unsupportedReason) { Owner = this }.ShowDialog();
+    }
 }

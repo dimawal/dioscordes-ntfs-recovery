@@ -71,7 +71,7 @@ internal static class RecoverCommand
                 string destinationPath = Path.Combine(destinationRoot, relativePath);
                 Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
 
-                FileExtractionResult result = FileExtractor.Extract(device!, loaded.Geometry.BytesPerCluster, fileNode.Record!.Dto, destinationPath);
+                FileExtractionResult result = FileExtractor.Extract(device!, loaded.Geometry.PartitionOffset, loaded.Geometry.BytesPerCluster, fileNode.Record!.Dto, destinationPath);
 
                 switch (result.Status)
                 {

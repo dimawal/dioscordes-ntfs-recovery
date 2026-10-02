@@ -15,9 +15,17 @@ public static class ScanRecordAttributeListResolver
 {
     public static List<ScanRecordDto> Resolve(IReadOnlyList<ScanRecordDto> allRecords)
     {
-        var byRecordNumber = new Dictionary<uint, ScanRecordDto>();
+        // Keyed by (RecordNumber, SequenceNumber), not just RecordNumber: a volume whose
+        // record numbers have been reused (e.g. after repartitioning) can have several
+        // unrelated records sharing one number, and collapsing them to "whichever record
+        // was seen last" can silently pick the wrong one as an extension record -- the
+        // real extension record then never gets merged in, and the base record's
+        // DataRuns are left with an undetected gap (see MftRecordParser/FileExtractor's
+        // VCN-contiguity check for how that gap is now caught instead of silently
+        // producing a corrupted file).
+        var byIdentity = new Dictionary<(uint RecordNumber, ushort SequenceNumber), ScanRecordDto>();
         foreach (ScanRecordDto record in allRecords)
-            byRecordNumber[record.RecordNumber] = record; // last-wins on duplicate record numbers (v1 simplification)
+            byIdentity[(record.RecordNumber, record.SequenceNumber)] = record;
 
         var results = new List<ScanRecordDto>();
 
@@ -47,7 +55,7 @@ public static class ScanRecordAttributeListResolver
                 if (!visited.Add(entry.HostRecordNumber))
                     continue;
 
-                if (!byRecordNumber.TryGetValue((uint)entry.HostRecordNumber, out ScanRecordDto? extension))
+                if (!byIdentity.TryGetValue(((uint)entry.HostRecordNumber, entry.HostSequenceNumber), out ScanRecordDto? extension))
                     continue;
 
                 bool claimsThisBase =

@@ -51,6 +51,9 @@ public sealed class ImageFileReader : IBlockDevice
             totalRead += read;
         }
 
+        if (totalRead < buffer.Length)
+            buffer.Slice(totalRead).Clear(); // honor the IBlockDevice contract: never leave stale bytes from a prior call in an unread tail
+
         return totalRead;
     }
 

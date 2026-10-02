@@ -66,7 +66,9 @@ internal static class ExtractRecordCommand
 
             Directory.CreateDirectory(destinationDir!);
 
-            FileExtractionResult result = FileExtractor.Extract(device!, loaded.Geometry.BytesPerCluster, record, outputPath);
+            FileExtractionResult result = FileExtractor.Extract(
+                device!, loaded.Geometry.PartitionOffset, loaded.Geometry.BytesPerCluster, record, outputPath,
+                onDiagnostic: msg => Console.Error.WriteLine($"[diag] {msg}"));
             PrintResult(result, outputPath);
             return result.Status is FileExtractionStatus.Healthy ? 0 : 2;
         }

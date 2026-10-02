@@ -83,6 +83,28 @@ public class ScanRecordAttributeListResolverTests
     }
 
     [Fact]
+    public void Resolve_ExtensionRecordNumberCollidesWithUnrelatedRecord_StillFindsCorrectExtension()
+    {
+        // Reproduces a real bug: record number 999 is shared by two completely unrelated
+        // records on a volume whose record numbers have been reused (an unrelated file at
+        // sequence 50, and the real extension record at sequence 2). A lookup keyed only
+        // by record number would resolve to whichever of these happened to be stored
+        // last, silently failing to merge the real extension's run whenever the
+        // unrelated record won -- leaving a gap in the base record's DataRuns that the
+        // extractor would previously splice over without detection.
+        var entries = new List<AttributeListEntryDto> { new(NtfsAttributeType.Data, 0x80, 0, 999, 2, null) };
+        var baseRecord = BaseRecord(10, 1, [new DataRunDto(0, 5, 100, false)], entries);
+        var unrelatedRecord = new ScanRecordDto { RecordNumber = 999, SequenceNumber = 50, Name = "unrelated-file.dat" };
+        var realExtension = ExtensionRecord(999, 2, baseRecordNumber: 10, baseSequenceNumber: 1, [new DataRunDto(5, 3, 500, false)]);
+
+        List<ScanRecordDto> result = ScanRecordAttributeListResolver.Resolve([baseRecord, unrelatedRecord, realExtension]);
+
+        ScanRecordDto merged = result.Single(r => r.RecordNumber == 10);
+        Assert.Equal(2, merged.DataRuns.Count);
+        Assert.Equal(500, merged.DataRuns[1].Lcn);
+    }
+
+    [Fact]
     public void Resolve_WorksAcrossSeparatelyPersistedBatches()
     {
         // Simulates a resumed, checkpointed scan: base and extension were found in

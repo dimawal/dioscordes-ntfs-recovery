@@ -8,9 +8,11 @@ using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
 using NtfsRecovery.Core.IO;
 using NtfsRecovery.Core.Ntfs;
+using NtfsRecovery.Core.Partitions;
 using NtfsRecovery.Core.Recovery;
 using NtfsRecovery.Core.Safety;
 using NtfsRecovery.Core.Scan;
+using NtfsRecovery.Gui.Disks;
 
 namespace NtfsRecovery.Gui.ViewModels;
 
@@ -36,6 +38,7 @@ public sealed class MainViewModel : ViewModelBase
 
     private IBlockDevice? _device;
     private NtfsBootSector? _bootSector;
+    private long _loadedPartitionOffset;
     private string _sourceDescription = "";
     private CancellationTokenSource? _scanCts;
 
@@ -45,11 +48,37 @@ public sealed class MainViewModel : ViewModelBase
     private string _diskPath = @"\\.\PhysicalDrive1";
     public string DiskPath { get => _diskPath; set => SetField(ref _diskPath, value); }
 
+    public ObservableCollection<DiskItemViewModel> Disks { get; } = [];
+
+    private DiskItemViewModel? _selectedDisk;
+    public DiskItemViewModel? SelectedDisk
+    {
+        get => _selectedDisk;
+        set
+        {
+            if (SetField(ref _selectedDisk, value) && value is not null)
+                DiskPath = value.DeviceId;
+        }
+    }
+
     private bool _useDisk;
     public bool UseDisk { get => _useDisk; set => SetField(ref _useDisk, value); }
 
     private string _partitionOffsetText = "0";
     public string PartitionOffsetText { get => _partitionOffsetText; set => SetField(ref _partitionOffsetText, value); }
+
+    public ObservableCollection<PartitionItemViewModel> Partitions { get; } = [];
+
+    private PartitionItemViewModel? _selectedPartition;
+    public PartitionItemViewModel? SelectedPartition
+    {
+        get => _selectedPartition;
+        set
+        {
+            if (SetField(ref _selectedPartition, value) && value is not null)
+                PartitionOffsetText = value.StartOffset.ToString();
+        }
+    }
 
     private string _volumeInfoText = "(nenhum volume carregado)";
     public string VolumeInfoText { get => _volumeInfoText; set => SetField(ref _volumeInfoText, value); }
@@ -82,15 +111,50 @@ public sealed class MainViewModel : ViewModelBase
     public FileListItemViewModel? SelectedFileItem
     {
         get => _selectedFileItem;
-        set
-        {
-            if (SetField(ref _selectedFileItem, value))
-                MetadataPreviewText = BuildMetadataPreview(value?.Node);
-        }
+        set => SetField(ref _selectedFileItem, value);
     }
 
-    private string _metadataPreviewText = "";
-    public string MetadataPreviewText { get => _metadataPreviewText; set => SetField(ref _metadataPreviewText, value); }
+    /// <summary>Double-click handler entry point (wired from code-behind): builds the content for a modal preview window.</summary>
+    public (string Metadata, System.Windows.Media.Imaging.BitmapImage? Image, string? Text, string? UnsupportedReason) BuildPreviewContent(FileListItemViewModel? item)
+    {
+        RecoveryNode? node = item?.Node;
+        string metadata = BuildMetadataPreview(node);
+
+        if (node is null || node.IsDirectory)
+            return (metadata, null, null, null);
+
+        if (node.Record is null)
+            return (metadata, null, null, "Nó sintético; sem dados para pré-visualizar.");
+
+        if (_device is null || _bootSector is null)
+            return (metadata, null, null, "Carregue o volume de origem (mesma imagem/disco + offset) antes de pré-visualizar o conteúdo.");
+
+        string extension = Path.GetExtension(node.Name);
+
+        try
+        {
+            if (ImageExtensions.Contains(extension))
+            {
+                byte[] bytes = FileExtractor.ExtractPreviewBytes(_device, _loadedPartitionOffset, _bootSector.BytesPerCluster, node.Record.Dto, MaxImagePreviewBytes, Log);
+                System.Windows.Media.Imaging.BitmapImage? image = bytes.Length > 0 ? BytesToBitmapImage(bytes) : null;
+                return image is not null
+                    ? (metadata, image, null, null)
+                    : (metadata, null, null, "Não foi possível decodificar a imagem (os bytes recuperados podem estar corrompidos). Veja o Log para detalhes.");
+            }
+
+            if (TextExtensions.Contains(extension))
+            {
+                byte[] bytes = FileExtractor.ExtractPreviewBytes(_device, _loadedPartitionOffset, _bootSector.BytesPerCluster, node.Record.Dto, MaxTextPreviewBytes, Log);
+                return (metadata, null, bytes.Length > 0 ? System.Text.Encoding.UTF8.GetString(bytes) : "(vazio)", null);
+            }
+
+            return (metadata, null, null, "Sem pré-visualização disponível para este tipo de arquivo.");
+        }
+        catch (Exception ex)
+        {
+            return (metadata, null, null, $"Falha ao gerar pré-visualização: {ex.Message}");
+        }
+    }
 
     private string _destinationPath = "";
     public string DestinationPath { get => _destinationPath; set => SetField(ref _destinationPath, value); }
@@ -121,6 +185,8 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand RecoverSelectedCommand { get; }
     public ICommand BrowseScanDbCommand { get; }
     public ICommand LoadFromDatabaseCommand { get; }
+    public ICommand ListPartitionsCommand { get; }
+    public ICommand ListDisksCommand { get; }
 
     public MainViewModel()
     {
@@ -129,12 +195,92 @@ public sealed class MainViewModel : ViewModelBase
         ScanCommand = new RelayCommand(_ => _ = RunScanAsync(), _ => !IsBusy);
         CancelScanCommand = new RelayCommand(_ => _scanCts?.Cancel(), _ => IsBusy);
         BrowseDestinationCommand = new RelayCommand(_ => BrowseDestination());
-        RecoverSelectedCommand = new RelayCommand(_ => _ = RecoverSelectedAsync(), _ => !IsBusy && SelectedTreeItem is not null);
+        RecoverSelectedCommand = new RelayCommand(_ => _ = RecoverSelectedAsync(), _ => !IsBusy && GetRecoveryTarget() is not null);
         BrowseScanDbCommand = new RelayCommand(_ => BrowseScanDb());
         LoadFromDatabaseCommand = new RelayCommand(_ => _ = LoadFromDatabase(), _ => !IsBusy);
+        ListPartitionsCommand = new RelayCommand(_ => ListPartitions(), _ => !IsBusy);
+        ListDisksCommand = new RelayCommand(_ => ListDisks(), _ => !IsBusy);
     }
 
-    private void Log(string message) => LogEntries.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {message}");
+    /// <summary>
+    /// Thread-safe by design: called both from the UI thread and from background
+    /// Task.Run work (e.g. the diagnostic callback passed into FileExtractor during
+    /// Recover, which runs off-thread). LogEntries is bound to the UI, so mutating it
+    /// from a non-UI thread would throw; this dispatches back to the UI thread when needed.
+    /// </summary>
+    private void Log(string message)
+    {
+        string entry = $"[{DateTime.Now:HH:mm:ss}] {message}";
+        System.Windows.Application.Current?.Dispatcher.Invoke(() => LogEntries.Insert(0, entry));
+    }
+
+    /// <summary>Reads the MBR/GPT partition table so the user can pick an offset from a list instead of typing one in blind.</summary>
+    private void ListPartitions()
+    {
+        Partitions.Clear();
+        IBlockDevice? device = null;
+
+        try
+        {
+            if (UseDisk)
+            {
+                if (!OperatingSystem.IsWindows())
+                    throw new PlatformNotSupportedException("O acesso a discos físicos exige Windows.");
+                device = new RawDiskReader(DiskPath);
+            }
+            else
+            {
+                device = new ImageFileReader(ImagePath);
+            }
+
+            PartitionTableReadResult result = PartitionTableReader.Read(device);
+
+            if (result.Kind == PartitionTableKind.None)
+            {
+                Log("Nenhuma tabela de partições MBR/GPT encontrada no início do disco/imagem.");
+                return;
+            }
+
+            foreach (PartitionInfo p in result.Partitions)
+                Partitions.Add(new PartitionItemViewModel(p));
+
+            Log($"{result.Partitions.Count} partição(ões) encontrada(s) ({result.Kind}). Selecione uma na lista para preencher o offset.");
+        }
+        catch (Exception ex)
+        {
+            Log($"ERRO ao listar partições: {ex.Message}");
+            MessageBox.Show(ex.Message, "Falha ao listar partições", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            device?.Dispose();
+        }
+    }
+
+    /// <summary>Lists physical disks via WMI so the user can pick one by model/size instead of typing \\.\PhysicalDriveN by hand.</summary>
+    private void ListDisks()
+    {
+        Disks.Clear();
+
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException("A listagem de discos físicos exige Windows.");
+
+            List<PhysicalDiskInfo> disks = PhysicalDiskLister.List();
+            foreach (PhysicalDiskInfo d in disks)
+                Disks.Add(new DiskItemViewModel(d));
+
+            Log(disks.Count == 0
+                ? "Nenhum disco físico encontrado."
+                : $"{disks.Count} disco(s) encontrado(s). Selecione um na lista para preencher o caminho do disco.");
+        }
+        catch (Exception ex)
+        {
+            Log($"ERRO ao listar discos: {ex.Message}");
+            MessageBox.Show(ex.Message, "Falha ao listar discos", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
 
     private void BrowseImage()
     {
@@ -259,6 +405,7 @@ public sealed class MainViewModel : ViewModelBase
                 throw new IOException("Não foi possível ler um boot sector completo nesse offset.");
 
             _bootSector = NtfsBootSector.Parse(sector);
+            _loadedPartitionOffset = partitionOffset;
 
             VolumeInfoText =
                 $"Bytes/setor: {_bootSector.BytesPerSector}   " +
@@ -467,6 +614,34 @@ public sealed class MainViewModel : ViewModelBase
             FileListItems.Add(new FileListItemViewModel(child));
     }
 
+    private const int MaxImagePreviewBytes = 5 * 1024 * 1024;
+    private const int MaxTextPreviewBytes = 200 * 1024;
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp" };
+
+    private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".txt", ".log", ".ini", ".csv", ".json", ".xml", ".md" };
+
+    private static System.Windows.Media.Imaging.BitmapImage? BytesToBitmapImage(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (NotSupportedException)
+        {
+            return null; // not a decodable image (e.g. the recovered bytes are still corrupted) -- just show no preview
+        }
+    }
+
     private static string BuildMetadataPreview(RecoveryNode? node)
     {
         if (node is null)
@@ -489,9 +664,14 @@ public sealed class MainViewModel : ViewModelBase
             $"Data runs:       {r.Dto.DataRuns.Count}";
     }
 
+    /// <summary>Recovery acts on whichever specific row is selected in the Contents grid, if any; otherwise the whole current folder.</summary>
+    private RecoveryNode? GetRecoveryTarget() =>
+        SelectedFileItem is not null ? SelectedFileItem.Node : SelectedTreeItem?.Node;
+
     private async Task RecoverSelectedAsync()
     {
-        if (SelectedTreeItem is null || _device is null || _bootSector is null)
+        RecoveryNode? target = GetRecoveryTarget();
+        if (target is null || _device is null || _bootSector is null)
             return;
 
         if (string.IsNullOrWhiteSpace(DestinationPath))
@@ -516,9 +696,10 @@ public sealed class MainViewModel : ViewModelBase
 
         try
         {
-            RecoveryNode root = SelectedTreeItem.Node;
+            RecoveryNode root = target;
             string destinationRoot = DestinationPath;
             int bytesPerCluster = _bootSector.BytesPerCluster;
+            long partitionOffset = _loadedPartitionOffset;
             IBlockDevice device = _device;
 
             var (healthy, partial, unsupported, corrupt, metadataOnly) = await Task.Run(() =>
@@ -530,7 +711,7 @@ public sealed class MainViewModel : ViewModelBase
                     string destPath = Path.Combine(destinationRoot, relative);
                     Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
 
-                    FileExtractionResult result = FileExtractor.Extract(device, bytesPerCluster, fileNode.Record!.Dto, destPath);
+                    FileExtractionResult result = FileExtractor.Extract(device, partitionOffset, bytesPerCluster, fileNode.Record!.Dto, destPath, onDiagnostic: Log);
                     switch (result.Status)
                     {
                         case FileExtractionStatus.Healthy: h++; break;

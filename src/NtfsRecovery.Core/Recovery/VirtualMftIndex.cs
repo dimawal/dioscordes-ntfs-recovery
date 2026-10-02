@@ -67,6 +67,16 @@ public sealed class VirtualMftIndex
         _byRecordNumber.Keys.Select(k => ResolveBest(k)!);
 
     /// <summary>
+    /// Every carved candidate, with no collapsing by record number. Unlike
+    /// <see cref="ResolvedRecords"/>, this preserves distinct (record number, sequence
+    /// number) identities -- essential on a volume whose record numbers have been reused
+    /// across unrelated filesystem layouts, where collapsing to "the single best overall
+    /// candidate" for a record number can silently merge two completely unrelated files
+    /// into one tree node.
+    /// </summary>
+    public IEnumerable<VirtualMftRecord> AllCandidates => _byRecordNumber.Values.SelectMany(list => list);
+
+    /// <summary>
     /// Resolves the specific record a child should link to as its parent. A volume that
     /// has been reformatted/repartitioned can surface several unrelated candidates
     /// sharing the same record number (e.g. record 5 from an old filesystem layout and

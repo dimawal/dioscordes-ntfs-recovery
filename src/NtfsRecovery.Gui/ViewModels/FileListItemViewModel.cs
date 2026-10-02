@@ -9,6 +9,7 @@ public sealed class FileListItemViewModel(RecoveryNode node)
     public string Name { get; } = node.Name;
     public string Type { get; } = node.IsDirectory ? "Pasta" : "Arquivo";
     public ulong Size { get; } = node.Record?.Dto.LogicalSize ?? 0;
+    public string SizeDisplay { get; } = node.IsDirectory ? "-" : $"{(node.Record?.Dto.LogicalSize ?? 0) / 1024.0 / 1024.0:N2} MB";
     public string Record { get; } = node.Record?.RecordNumber.ToString() ?? "-";
     public string State { get; } = node.Record is null ? "synthetic" : node.Record.IsInUse ? "in-use" : "deleted";
     public int Runs { get; } = node.Record?.Dto.DataRuns.Count ?? 0;

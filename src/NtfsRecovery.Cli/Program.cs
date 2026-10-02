@@ -10,6 +10,7 @@ public static class Program
         var rootCommand = new RootCommand("NTFS carving and recovery tool (read-only on the source device).")
         {
             InspectCommand.Build(),
+            PartitionsCommand.Build(),
             ScanCommand.Build(),
             TreeCommand.Build(),
             ListCommand.Build(),

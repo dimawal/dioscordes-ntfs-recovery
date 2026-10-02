@@ -20,7 +20,18 @@
                     <Button Content="Procurar..." Command="{Binding BrowseImageCommand}" DockPanel.Dock="Right" Width="90" Margin="6,0,0,0"/>
                     <TextBox x:Name="ImagePathTextBox" Text="{Binding ImagePath, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseDisk, Converter={StaticResource InverseBool}}" AutomationProperties.AutomationId="ImagePathTextBox"/>
                 </DockPanel>
+                <DockPanel Margin="0,0,0,4">
+                    <Button Content="Listar discos" Command="{Binding ListDisksCommand}" IsEnabled="{Binding UseDisk}" DockPanel.Dock="Right" Width="120" Margin="6,0,0,0" AutomationProperties.AutomationId="ListDisksButton"/>
+                    <ComboBox ItemsSource="{Binding Disks}" SelectedItem="{Binding SelectedDisk}" IsEnabled="{Binding UseDisk}"
+                              DisplayMemberPath="Display" HorizontalAlignment="Stretch" Margin="0,0,6,0" AutomationProperties.AutomationId="DisksComboBox"/>
+                </DockPanel>
                 <TextBox Text="{Binding DiskPath, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseDisk}" Margin="0,0,0,4"/>
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="Partição:" VerticalAlignment="Center" Margin="0,0,6,0" DockPanel.Dock="Left"/>
+                    <Button Content="Listar partições" Command="{Binding ListPartitionsCommand}" DockPanel.Dock="Right" Width="120" Margin="6,0,0,0" AutomationProperties.AutomationId="ListPartitionsButton"/>
+                    <ComboBox ItemsSource="{Binding Partitions}" SelectedItem="{Binding SelectedPartition}"
+                              DisplayMemberPath="Display" HorizontalAlignment="Stretch" AutomationProperties.AutomationId="PartitionsComboBox"/>
+                </DockPanel>
                 <DockPanel>
                     <TextBlock Text="Offset da partição (bytes):" VerticalAlignment="Center" Margin="0,0,6,0" DockPanel.Dock="Left"/>
                     <Button Content="Carregar informações do volume" Command="{Binding LoadVolumeCommand}" DockPanel.Dock="Right" Width="200" Margin="6,0,0,0" AutomationProperties.AutomationId="LoadVolumeButton"/>
@@ -83,18 +94,18 @@
 
             <Grid Grid.Column="1">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="2*"/>
-                    <RowDefinition Height="110"/>
+                    <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <GroupBox Header="Conteúdo" Grid.Row="0" Margin="0,0,0,6">
+                <GroupBox Header="Conteúdo (duplo clique num arquivo para pré-visualizar)" Grid.Row="0" Margin="0,0,0,6">
                     <DataGrid ItemsSource="{Binding FileListItems}" SelectedItem="{Binding SelectedFileItem}"
-                              AutoGenerateColumns="False" IsReadOnly="True" AutomationProperties.AutomationId="ContentsDataGrid">
+                              AutoGenerateColumns="False" IsReadOnly="True" AutomationProperties.AutomationId="ContentsDataGrid"
+                              MouseDoubleClick="ContentsDataGrid_MouseDoubleClick">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Nome" Binding="{Binding Name}" Width="2*"/>
                             <DataGridTextColumn Header="Tipo" Binding="{Binding Type}" Width="80"/>
-                            <DataGridTextColumn Header="Tamanho" Binding="{Binding Size}" Width="100"/>
+                            <DataGridTextColumn Header="Tamanho" Binding="{Binding SizeDisplay}" Width="100"/>
                             <DataGridTextColumn Header="Registro" Binding="{Binding Record}" Width="80"/>
                             <DataGridTextColumn Header="Estado" Binding="{Binding State}" Width="80"/>
                             <DataGridTextColumn Header="Runs" Binding="{Binding Runs}" Width="60"/>
@@ -102,12 +113,7 @@
                     </DataGrid>
                 </GroupBox>
 
-                <GroupBox Header="Pré-visualização de metadados" Grid.Row="1" Margin="0,0,0,6">
-                    <TextBox Text="{Binding MetadataPreviewText, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas"
-                              VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
-                </GroupBox>
-
-                <GroupBox Header="Recuperar pasta/arquivo selecionado" Grid.Row="2">
+                <GroupBox Header="Recuperar pasta/arquivo selecionado" Grid.Row="1">
                     <DockPanel Margin="6">
                         <Button Content="Recuperar" Command="{Binding RecoverSelectedCommand}" DockPanel.Dock="Right" Width="100" Margin="6,0,0,0"/>
                         <Button Content="Procurar..." Command="{Binding BrowseDestinationCommand}" DockPanel.Dock="Right" Width="90" Margin="6,0,0,0"/>

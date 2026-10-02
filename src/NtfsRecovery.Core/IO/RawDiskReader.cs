@@ -107,7 +107,25 @@ public sealed class RawDiskReader : IBlockDevice
         byte[] aligned = System.Buffers.ArrayPool<byte>.Shared.Rent(alignedLength);
         try
         {
-            int totalRead = RandomAccess.Read(_handle, aligned.AsSpan(0, alignedLength), alignedStart);
+            // A single RandomAccess.Read call is not guaranteed to fill a large request in
+            // one shot -- a USB mass-storage bridge in particular can legitimately return
+            // fewer bytes than asked for a big sequential read (transfer-size limits,
+            // transient hiccups) without that being an error. Looping here, advancing by
+            // however much was actually read each time, is what makes a short OS-level
+            // read distinguishable from genuine end-of-device: only a read that returns 0
+            // progress ends the loop early. Without this loop, a short read was previously
+            // silently zero-filled and reported as a full success, which (combined with a
+            // caller advancing its own offset by the requested size rather than the actual
+            // bytes read) could turn one partial USB read into a chunk of zeroed-out file
+            // content instead of the real data that was actually still there to be read.
+            int totalRead = 0;
+            while (totalRead < alignedLength)
+            {
+                int read = RandomAccess.Read(_handle, aligned.AsSpan(totalRead, alignedLength - totalRead), alignedStart + totalRead);
+                if (read <= 0)
+                    break;
+                totalRead += read;
+            }
 
             int sliceStart = checked((int)(offset - alignedStart));
             int available = Math.Max(0, totalRead - sliceStart);
