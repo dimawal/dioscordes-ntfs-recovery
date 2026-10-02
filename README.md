@@ -89,11 +89,11 @@ dotnet run --project src/NtfsRecovery.Gui
 
 Fluxo de uso:
 
-1. **Origem**: informe o caminho de uma imagem (`--image`) ou marque "Usar disco físico" e informe o caminho do disco (ex.: `\\.\PhysicalDrive1`), além do offset da partição. Clique em **"Carregar informações do volume"** para ler o boot sector.
+1. **Origem**: informe o caminho de uma imagem (`--image`) ou marque "Usar disco físico". Em vez de digitar o caminho do disco de cor, clique em **"Listar discos"** para listar (via WMI) os discos físicos conectados por modelo, tamanho e interface, e selecione o desejado numa lista suspensa. Da mesma forma, clique em **"Listar partições"** para ler a tabela de partições (MBR/GPT) do disco/imagem escolhido e selecionar a partição (identificada por offset, tamanho, tipo e se parece ser NTFS) em vez de digitar o offset manualmente. Clique em **"Carregar informações do volume"** para ler o boot sector.
 2. **Varredura**: defina (ou aceite a sugestão automática de) um caminho de banco de dados para salvar os resultados e clique em **"Escanear"**. A barra de progresso e o status mostram o andamento; é possível **cancelar** a qualquer momento — o progresso fica salvo em checkpoint. Opções avançadas permitem limitar o intervalo escaneado, ajustar o tamanho do bloco de leitura e retomar uma varredura anterior.
 3. **"Carregar do BD (sem varrer)"** reconstrói a árvore instantaneamente a partir de um banco de dados já existente, sem tocar no disco de origem novamente (necessário apenas recarregar o volume de origem se for recuperar arquivos depois).
-4. **Navegação**: a árvore de pastas recuperada aparece à esquerda; selecionando uma pasta, seu conteúdo (arquivos e subpastas, com tamanho, número do registro MFT e estado em-uso/apagado) aparece à direita, com pré-visualização de metadados do item selecionado.
-5. **Recuperação**: escolha uma pasta de destino e clique em **"Recuperar"** para extrair a pasta/arquivo selecionado. A mesma verificação de segurança da CLI impede recuperar para o mesmo disco físico de origem.
+4. **Navegação**: a árvore de pastas recuperada aparece à esquerda; selecionando uma pasta, seu conteúdo (arquivos e subpastas, com tamanho formatado em MB, número do registro MFT e estado em-uso/apagado) aparece à direita. Dar duplo clique em um arquivo abre uma janela de pré-visualização separada, com os metadados e, quando suportado, o conteúdo (imagem ou texto).
+5. **Recuperação**: escolha uma pasta de destino e clique em **"Recuperar"** para extrair a pasta/arquivo selecionado (seja pela árvore ou pelo item selecionado na grade de conteúdo). A mesma verificação de segurança da CLI impede recuperar para o mesmo disco físico de origem.
 
 Um painel de log na parte inferior registra cada ação relevante (volume carregado, varredura concluída, bloqueios de segurança, erros).
 
